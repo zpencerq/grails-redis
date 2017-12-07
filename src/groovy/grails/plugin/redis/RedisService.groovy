@@ -251,7 +251,7 @@ class RedisService {
     }
 
     List memoizeDomainList(Class domainClass, String key, Map options = [:], Closure closure) {
-        List<Long> idList = getIdListFor(key)
+        List<String> idList = getIdListFor(key)
         if(idList) return hydrateDomainObjectsFrom(domainClass, idList)
 
         def domainList = withOptionalRedis { Jedis redis ->
@@ -263,13 +263,13 @@ class RedisService {
         domainList
     }
 
-    List<Long> memoizeDomainIdList(Class domainClass, String key, Integer expire, Closure closure) {
+    List<String> memoizeDomainIdList(Class domainClass, String key, Integer expire, Closure closure) {
         memoizeDomainIdList(domainClass, key, [expire: expire], closure)
     }
 
     // used when we just want the list of Ids back rather than hydrated objects
-    List<Long> memoizeDomainIdList(Class domainClass, String key, Map options = [:], Closure closure) {
-        List<Long> idList = getIdListFor(key)
+    List<String> memoizeDomainIdList(Class domainClass, String key, Map options = [:], Closure closure) {
+        List<String> idList = getIdListFor(key)
         if(idList) return idList
 
         def domainList = closure()
@@ -279,15 +279,15 @@ class RedisService {
         getIdListFor(key)
     }
 
-    protected List<Long> getIdListFor(String key) {
+    protected List<String> getIdListFor(String key) {
         List<String> idList = withOptionalRedis { Jedis redis ->
             if (redis) return redis.lrange(key, 0, -1)
         }
 
         if(idList) {
             if (log.debugEnabled) log.debug "$key cache hit, returning ${idList.size()} ids"
-            List<Long> idLongList = idList*.toLong()
-            return idLongList
+            List<String> idStringList = idList*.toString()
+            return idStringList
         }
     }
 
@@ -303,7 +303,7 @@ class RedisService {
         }
     }
 
-    protected List hydrateDomainObjectsFrom(Class domainClass, List<Long> idList) {
+    protected List hydrateDomainObjectsFrom(Class domainClass, List<String> idList) {
         if(domainClass && idList) {
             //return domainClass.findAllByIdInList(idList, [cache: true])
             return idList.collect { id -> domainClass.load(id) }
@@ -315,21 +315,21 @@ class RedisService {
         memoizeDomainObject(domainClass, key, [expire: expire], closure)
     }
 
-    // closure can return either a domain object or a Long id of a domain object
-    // it will be persisted into redis as the Long
+    // closure can return either a domain object or a String id of a domain object
+    // it will be persisted into redis as the String
     def memoizeDomainObject(Class domainClass, String key, Map options = [:], Closure closure) {
-        Long domainId = withOptionalRedis { redis ->
-            redis?.get(key)?.toLong()
+        String domainId = withOptionalRedis { redis ->
+            redis?.get(key)?.toString()
         }
-        if(!domainId) domainId = persistDomainId(closure()?.id as Long, key, options.expire)
+        if(!domainId) domainId = persistDomainId(closure()?.id as String, key, options.expire)
         domainClass.load(domainId)
     }
 
-    Long persistDomainId(Long domainId, String key, Integer expire) {
+    String persistDomainId(String domainId, String key, Integer expire) {
         if(domainId) {
             withOptionalPipeline { pipeline ->
                 if (pipeline) {
-                    pipeline.set(key, domainId.toString())
+                    pipeline.set(key, domainId)
                     if(expire) pipeline.expire(key, expire)
                 }
             }
